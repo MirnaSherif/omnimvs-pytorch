@@ -10,8 +10,9 @@ from utils.array_utils import *
 from scipy.spatial.transform import Rotation as R
 
 def rodrigues(r: np.ndarray) -> np.ndarray:
-    if r.size == 3: return R.from_rotvec(r.squeeze()).as_dcm()
-    else: return R.from_dcm(r).as_rotvec().reshape((3, 1))
+    if r.size == 3: return R.from_rotvec(r.squeeze()).as_matrix()
+    else: return R.from_matrix(r).as_rotvec().reshape((3, 1))
+
 
 def getRot(transform: np.ndarray) -> np.ndarray:
     if transform.size == 6:

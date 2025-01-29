@@ -21,14 +21,14 @@ from module.loss_functions import *
 
 # Initialize
 GPU_ID = 0
-os.putenv('CUDA_VISIBLE_DEVICES', str(GPU_ID))
-torch.backends.cudnn.benchmark = True
-torch.backends.cuda.benchmark = True
+# os.environ['CUDA_VISIBLE_DEVICES'] = str(GPU_ID)
+# torch.backends.cudnn.benchmark = True
+# torch.backends.cuda.benchmark = True
 
 opts = Edict()
 # Test arguments
 if len(sys.argv) >= 2: opts.snapshot_path = sys.argv[1]
-else: opts.snapshot_path = 'tiny_plus-ft.pt'
+else: opts.snapshot_path = r"C:\Users\MernaSherif\Desktop\SVMRepo\omnimvs_MyRepo\omnimvs-pytorch\weights\tiny_plus_ft.pt"
 
 # Dataset & sweep arguments
 if len(sys.argv) >= 3: opts.dbname = sys.argv[2]
@@ -56,18 +56,26 @@ if opts.vis:
     plt.show()
 
 def main():
+
+    opts.db_root = './data'
+    opts.dbname = 'aptiv_single'
+
+    # Debug prints to check configurations before running the test
+    print(f"Testing model: {opts.snapshot_path}")
+    print(f"Dataset: {opts.dbname}, Path: {opts.db_root}")
+
     data = Dataset(opts.dbname, opts.data_opts, db_root=opts.db_root)
     dbloader = torch.utils.data.DataLoader(data, shuffle=False)
     
     if not osp.exists(opts.snapshot_path):
         sys.exit('%s does not exsits' % (opts.snapshot_path))
-    snapshot = torch.load(opts.snapshot_path)
+    snapshot = torch.load(opts.snapshot_path, map_location=torch.device('cpu'))
 
     opts.net_opts.CH = snapshot['CH']
-    net = OmniMVSNet(opts.net_opts).cuda()
+    net = OmniMVSNet(opts.net_opts).to(torch.device("cpu"))
     net.load_state_dict(snapshot['net_state_dict'])
 
-    grids = [torch.tensor(grid, requires_grad=False).cuda() \
+    grids = [torch.tensor(grid, requires_grad=False).to(torch.device("cpu")) \
         for grid in data.grids]
 
     if not osp.exists(opts.result_dir):
@@ -81,7 +89,7 @@ def main():
         toc, toc2 = 0, 0
         net.eval()
         tic = time.time()
-        imgs = [torch.Tensor(img).unsqueeze(0).cuda() for img in imgs]
+        imgs = [torch.Tensor(img).unsqueeze(0).to(torch.device("cpu")) for img in imgs]
         with torch.no_grad():
             invdepth_idx, prob, _ = net(imgs, grids, out_cost=True)
         invdepth_idx = toNumpy(invdepth_idx)

@@ -1,5 +1,6 @@
 import torch
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 from omnimvs import OmniMVS  # Import the OmniMVS model
 from spherical_sweep import SphericalSweeping  # Import the OmniMVS model
@@ -101,10 +102,10 @@ if __name__ == "__main__":
 
     # Paths to test fisheye images
     test_image_paths = [
-        r"C:\Users\MernaSherif\Desktop\SVMRepo\omnimvs_dataset\urban_sunny\sunny\cam1\0001.png",  # cam_front
-        r"C:\Users\MernaSherif\Desktop\SVMRepo\omnimvs_dataset\urban_sunny\sunny\cam2\0001.png",  # cam_right
-        r"C:\Users\MernaSherif\Desktop\SVMRepo\omnimvs_dataset\urban_sunny\sunny\cam3\0001.png",  # cam_rear
-        r"C:\Users\MernaSherif\Desktop\SVMRepo\omnimvs_dataset\urban_sunny\sunny\cam4\0001.png"   # cam_left
+        r"C:\Users\MernaSherif\Desktop\SVMRepo\omnimvs_dataset\urban_cloudy\cloudy\cam1\0001.png",  # cam_front
+        r"C:\Users\MernaSherif\Desktop\SVMRepo\omnimvs_dataset\urban_cloudy\cloudy\cam2\0001.png",  # cam_right
+        r"C:\Users\MernaSherif\Desktop\SVMRepo\omnimvs_dataset\urban_cloudy\cloudy\cam3\0001.png",  # cam_rear
+        r"C:\Users\MernaSherif\Desktop\SVMRepo\omnimvs_dataset\urban_cloudy\cloudy\cam4\0001.png"   # cam_left
     ]
 
     # Run the model on the test images
@@ -115,9 +116,23 @@ if __name__ == "__main__":
     depth_map = (depth_map - depth_map.min()) / (depth_map.max() - depth_map.min() + 1e-8)  # Normalize to [0,1]
     depth_map = (depth_map * 255).astype(np.uint8)  # Convert to [0,255]
 
+    # Apply heatmap using OpenCV
+    heatmap = cv2.applyColorMap(depth_map, cv2.COLORMAP_JET)
+
+    # Show the heatmap
+    cv2.imshow("Depth Heatmap", heatmap)
+    cv2.imwrite("depth_heatmap_cloudy.png", heatmap)  # Save the heatmap image
+
     # Save and display
     cv2.imshow("Depth Map", depth_map)
-    cv2.imwrite("depth_map_output.png", depth_map)
+    cv2.imwrite("depth_map_output_cloudy.png", depth_map)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
+    depth_numpy = depth_map.squeeze().cpu().numpy()
+    plt.imshow(depth_numpy, cmap='jet')  # 'jet' gives a better depth visualization
+    plt.colorbar()
+    plt.title("Depth Map Heatmap")
+    plt.show()
+
 

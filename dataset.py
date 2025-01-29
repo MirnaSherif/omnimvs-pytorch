@@ -335,7 +335,9 @@ class Dataset(torch.utils.data.Dataset):
                      entropy=None, gt=None, transform=None) -> np.ndarray:
         for i in range(4):
             imgs[i] = toNumpy(imgs[i])
-            imgs[i][self.ocams[i].invalid_mask] = 0
+            # Ensure mask size matches the image dimensions
+            mask_resized = resize(self.ocams[i].invalid_mask, (800, 1000), anti_aliasing=False) > 0.5
+            imgs[i][mask_resized] = 0
         inputs = concat(
             [concat([imgs[0], imgs[1]], axis=1),
              concat([imgs[3], imgs[2]], axis=1)], axis=0)
@@ -354,6 +356,9 @@ class Dataset(torch.utils.data.Dataset):
         ratio = vis.shape[0] / float(inputs.shape[0])
         inputs_rgb = np.tile(
             imrescale(inputs, ratio)[..., np.newaxis], (1, 1, 3))
+        if vis.shape[0] != inputs_rgb.shape[0]:  # Resize only if dimensions do not match
+            vis = resize(vis, (inputs_rgb.shape[0], vis.shape[1]), anti_aliasing=True)
+
         vis = np.concatenate((inputs_rgb, vis), axis=1)
         return vis
 

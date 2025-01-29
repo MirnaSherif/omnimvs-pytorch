@@ -107,7 +107,7 @@ class OmniMVSNet(torch.nn.Module):
         self.spherical_sweep = SphericalSweep(self.opts.CH)
         self.cost_computes = CostCompute(self.opts.CH)
         self.disps = torch.arange(0, self.opts.num_invdepth,
-            requires_grad=False).view((1, -1, 1, 1)).float().cuda()
+            requires_grad=False).view((1, -1, 1, 1)).float().to(torch.device("cpu"))
         
     def forward(self, imgs, grids, upsample=False, out_cost=False):
         feats = [self.feature_layers(x) for x in imgs]

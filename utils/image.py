@@ -13,7 +13,10 @@ import torch.nn.functional as F
 import numpy as np
 import tifffile
 import skimage.io
+import skimage.color
 import skimage.transform
+from skimage.transform import resize
+from skimage import img_as_ubyte
 from utils.common import *
 from utils.log import *
 
@@ -81,15 +84,15 @@ def rgb2gray(I: np.ndarray, channel_wise_mean=True) -> np.ndarray:
     else:
         return np.dot(I[...,:3], [0.299, 0.587, 0.114]).astype(dtype)
 
-def imrescale(image: np.ndarray, scale: float) -> np.ndarray:
-    image = toNumpy(image)
-    dtype = image.dtype
-    multi_channel = True if len(image.shape) == 3 else False
-    out = skimage.transform.rescale(image, scale, 
-        multichannel=multi_channel, preserve_range=True)
-    return out.astype(dtype)
+def imresize(image: np.ndarray) -> np.ndarray:
+    """ Resizes image to fixed 800x1000 (H x W) """
+    image = skimage.transform.resize(image, (800, 1000), anti_aliasing=True)
+    return image.astype(np.float32)
 
-imresize = skimage.transform.resize
+def imrescale(image: np.ndarray, scale: float) -> np.ndarray:
+    """ Rescales the image but enforces the fixed size of 800x1000 """
+    image = skimage.transform.resize(image, (800, 1000), anti_aliasing=True)
+    return image.astype(np.float32)
 
 def interp2D(I, grid):
     istensor = type(I) == torch.Tensor
@@ -111,48 +114,70 @@ def pixelToGrid(pts, target_resolution: (int, int),
     ys = ys.reshape((h, w, 1))
     return concat((xs, ys), 2)
 
-def normalizeImage(image: np.ndarray, mask=None,
-                   channel_wise_mean=True) -> np.ndarray:
+def normalizeImage(image: np.ndarray, mask=None, channel_wise_mean=True) -> np.ndarray:
     image = toNumpy(image)
+
     def __normalizeImage1D(image, mask):
         image = image.squeeze().astype(np.float32)
-        if mask is not None: image[mask] = np.nan
-        # normalize intensities
-        image = (image - np.nanmean(image.flatten())) / \
-            np.nanstd(image.flatten())
-        if mask is not None: image[mask] = 0
+
+        # Fix: Resize & Adjust the Mask
+        if mask is not None:
+            mask = resize(mask, (800, 1000), anti_aliasing=False) > 0.5  # Convert back to boolean
+            
+            # Shift the mask slightly to align with the images
+            mask = np.roll(mask, shift=(-120, 10), axis=(0, 1))  # Shift 120 pixels up, 10 pixels right
+
+        if mask is not None:
+            image[mask] = np.nan
+
+        # Normalize intensities
+        image = (image - np.nanmean(image.flatten())) / np.nanstd(image.flatten())
+
+        if mask is not None:
+            image[mask] = 0
+
         return image
+
     if len(image.shape) == 3 and image.shape[2] == 3:
         if channel_wise_mean:
             return np.concatenate(
-                [__normalizeImage1D(image[:,:,i], mask)[..., np.newaxis] 
-                    for i in range(3)], axis=2)
+                [__normalizeImage1D(image[:,:,i], mask)[..., np.newaxis] for i in range(3)], axis=2)
         else:
             image = image.squeeze().astype(np.float32)
             mask = np.tile(mask[..., np.newaxis], (1, 1, 3))
-            if mask is not None: image[mask] = np.nan
-            # normalize intensities
-            image = (image - np.nanmean(image.flatten())) / \
-                np.nanstd(image.flatten())
-            if mask is not None: image[mask] = 0
+            if mask is not None:
+                mask = resize(mask, (800, 1000), anti_aliasing=False) > 0.5
+                mask = np.roll(mask, shift=(-5, 10), axis=(0, 1))  # Shift again
+                image[mask] = np.nan
+            
+            # Normalize intensities
+            image = (image - np.nanmean(image.flatten())) / np.nanstd(image.flatten())
+
+            if mask is not None:
+                image[mask] = 0
+
             return image
     else:
         return __normalizeImage1D(image, mask)
 
+
 ## image file I/O =================================
 
-def writeImageFloat(image: np.ndarray, tiff_path: str, thumbnail = None):
+def writeImageFloat(image: np.ndarray, tiff_path: str, thumbnail=None):
     image = toNumpy(image)
     with tifffile.TiffWriter(tiff_path) as tiff:
         if thumbnail is not None:
             if not thumbnail.dtype == np.uint8:
                 thumbnail = thumbnail.astype(np.uint8)
-            tiff.save(thumbnail, photometric='RGB', planarconfig='CONTIG',
+            tiff.write(thumbnail, photometric='RGB', planarconfig='CONTIG',
                 bitspersample=8)
+
         if not image.dtype == np.float32:
             image = image.astype(np.float32)
-        tiff.save(image, photometric='MINISBLACK', planarconfig='CONTIG',
-                bitspersample=32, compress=9)
+        
+        # Use tiff.write instead of tiff.save and remove compress
+        tiff.write(image, photometric='MINISBLACK', planarconfig='CONTIG')
+
 
 def readImageFloat(tiff_path: str, return_thumbnail = False,
                    read_or_die = True):
@@ -181,17 +206,34 @@ def readImageFloat(tiff_path: str, return_thumbnail = False,
 
 def writeImage(image: np.ndarray, path: str):
     image = toNumpy(image)
+    image = np.squeeze(image)  # Remove unnecessary dimensions if any
+    image = img_as_ubyte(image)  # Convert to uint8
     skimage.io.imsave(path, image)
 
-def readImage(path: str, read_or_die = True):
+
+
+def readImage(path: str, read_or_die=True):
     try:
-        return skimage.io.imread(path)
+        img = skimage.io.imread(path)
+
+        # If the image has an alpha channel (4 channels), convert it to RGB
+        if img.shape[-1] == 4:  # Check if RGBA
+            img = img[..., :3]  # Remove alpha channel
+
+        # Convert to grayscale if the image has multiple channels
+        if img.ndim == 3 and img.shape[2] > 1:
+            img = skimage.color.rgb2gray(img)  # Converts to grayscale (1 channel)
+            img = (img * 255).astype(np.uint8)  # Scale to 8-bit format if needed
+
+        return img
     except Exception as e:
         LOG_ERROR('Failed to read image: "%s"' % (e))
         if read_or_die:
             traceback.print_tb(e.__traceback__)
             sys.exit()
         return None
+
+
 
 
 
